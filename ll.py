@@ -1,6 +1,5 @@
 # encoding=utf-8
 import time
-import progress
 import pygame
 
 # -- Init pygame and main surfaces
