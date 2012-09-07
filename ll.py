@@ -27,9 +27,68 @@ def render_text(s):
         textRect = text.get_rect()
 
         textRect.left = screen.get_rect().left+4
-        textRect.top = screen.get_rect().top+4
+        textRect.top = screen.get_rect().bottom-(4+FONT_SIZE)
         _last_text = {"s":s, 'text':text, 'textRect':textRect}
     screen.blit(_last_text['text'], _last_text['textRect'])    
+
+def _box_sprite(r, g, b):
+    box = pygame.Surface((10, 10))
+    box = box.convert()
+    box.fill((r, g, b))
+    return box
+    
+# http://pygame.org/wiki/Spritesheet
+class SpriteSheet(object):
+    def __init__(self, filename):
+        try:
+            self.sheet = pygame.image.load(filename).convert()
+        except pygame.error, message:
+            print 'Unable to load spritesheet image:', filename
+            raise SystemExit, message
+    # Load a specific image from a specific rectangle
+    def image_at(self, rectangle, colorkey = None):
+        "Loads image from x,y,x+offset,y+offset"
+        rect = pygame.Rect(rectangle)
+        image = pygame.Surface(rect.size).convert()
+        image.blit(self.sheet, (0, 0), rect)
+        if colorkey is not None:
+            if colorkey is -1:
+                colorkey = image.get_at((0,0))
+            image.set_colorkey(colorkey, pygame.RLEACCEL)
+        return image
+    # Load a whole bunch of images and return them as a list
+    def images_at(self, rects, colorkey = None):
+        "Loads multiple images, supply a list of coordinates" 
+        return [self.image_at(rect, colorkey) for rect in rects]
+    # Load a whole strip of images
+    def load_strip(self, rect, image_count, colorkey = None):
+        "Loads a strip of images and returns them as a list"
+        tups = [(rect[0]+rect[2]*x, rect[1], rect[2], rect[3])
+                for x in range(image_count)]
+        return self.images_at(tups, colorkey)
+
+SPRITES = {}
+sheet = SpriteSheet("Sprites.png")
+
+class Sprite(object):
+    def __init__(self, name, r, g, b, row, col, h):
+        self.box = _box_sprite(r, g, b)
+        TILE_SIZE = 16
+        top = TILE_SIZE*row
+        bottom = top+(TILE_SIZE*h)
+        left = TILE_SIZE*col
+        right = left+TILE_SIZE
+        self.tile = sheet.image_at((left, top, TILE_SIZE, TILE_SIZE*h))
+        SPRITES[name] = self.tile
+        
+Sprite('freefall', 255, 255, 255,   0, 0, 1)
+Sprite('landed', 0, 255, 0,     0, 1, 1)
+Sprite('fullpower', 255, 208, 0,    0, 2, 2)
+Sprite('halfpower', 255, 168, 0,    0, 3, 2)
+Sprite('lowpower', 255, 128, 0,    0, 4, 2)
+Sprite('landingpower', 255, 88, 0,    1, 0, 1)
+Sprite('boom', 255, 0, 0,    1, 1, 1)
+    
 
 class LunarMath(object):
     def __init__(self):
@@ -44,7 +103,7 @@ class LunarMath(object):
         self.g = -0.1
         self.atmo = 0.0
         self.motor = 0.0
-        self.motor_max = 2.0
+        self.motor_max = 1.2
         self.motor_ramp_up = 0.02
         self.motor_ramp_down = 0.1
         self.motor_on = "OFF"
@@ -57,6 +116,7 @@ class LunarMath(object):
             self.motor_on = "OFF"
 
     def game_tick(self):
+        LANDING_Y = FONT_SIZE+Y_SIZE+4
         if self.y>0.0 and self.y<Y_SIZE and self.x>=0.0 and self.x<X_SIZE:
             self.t += 1
             if self.motor_on=='ON':
@@ -76,9 +136,9 @@ class LunarMath(object):
             return self.display()
         else:
             if not self.result:
-                if self.y<=0.0 and self.yv>=-2.0:
+                if self.y<=LANDING_Y and self.yv>=-2.0:
                     self.result = 'LAND'
-                elif self.y<=0.0:
+                elif self.y<=LANDING_Y:
                     self.result = 'CRASH'
                 else:
                     self.result = 'MISS'
@@ -95,9 +155,6 @@ def one_run():
     
     keepGoing = True
     
-    box = pygame.Surface((10, 10))
-    box = box.convert()
-    box.fill((255, 255, 255))
     while keepGoing:
     
         clock.tick(30)
@@ -107,7 +164,7 @@ def one_run():
                 return False
             elif event.type == pygame.KEYDOWN:            
                 keys = [event.key]
-                if event.key == pygame.K_q:
+                if event.key in (pygame.K_q, pygame.K_ESCAPE):
                     return False # QUIT Command
                 elif event.key == pygame.K_n:
                     return True # START OVER
@@ -117,21 +174,28 @@ def one_run():
                     lunar.throttle(False)
     
         s = lunar.game_tick()          
-        
         if lunar.result == 'LAND':
-            box.fill((0, 255, 0))
+            sprite = SPRITES['landed'] 
         elif lunar.result == 'CRASH':
-            box.fill((255, 0, 0))
+            sprite = SPRITES['boom'] 
         elif lunar.result == 'MISS':
-            box.fill((0, 0, 255))
+            sprite = SPRITES['freefall'] 
+        elif lunar.motor>0.8:
+            sprite = SPRITES['fullpower'] 
+        elif lunar.motor>0.6:
+            sprite = SPRITES['halfpower'] 
+        elif lunar.motor>0.2:
+            sprite = SPRITES['lowpower'] 
         elif lunar.motor>0.0:
-            box.fill((200,88,0))
+            sprite = SPRITES['landingpower'] 
         else:
-            box.fill((255,255,255))
+            sprite = SPRITES['freefall'] 
                 
-
+        for idx, v in enumerate(SPRITES.values()):
+            screen.blit(v, (100, 100+(16*2*idx)))
+            
         screen.blit(background, (0, 0))
-        screen.blit(box, (lunar.x-10, Y_SIZE-lunar.y-10))
+        screen.blit(sprite, (lunar.x-10, Y_SIZE-lunar.y-10))
         render_text(s)
         pygame.display.flip()
 
